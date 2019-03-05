@@ -50,7 +50,7 @@ public class FlickrFetchr {
         return new String(getUrlBytes(urlSpec));
     }
 
-    public List<GalleryItem> fetchItems() {
+    public List<GalleryItem> fetchItems(Integer pageNumber) {
         List<GalleryItem> list = new ArrayList<>();
 
         try {
@@ -61,6 +61,7 @@ public class FlickrFetchr {
                     .appendQueryParameter("format", "json")
                     .appendQueryParameter("nojsoncallback", "1")
                     .appendQueryParameter("extras", "url_s")
+                    .appendQueryParameter("page", String.valueOf(pageNumber))
                     .build().toString();
 
             String jsonString = getUrlString(url);
@@ -78,7 +79,7 @@ public class FlickrFetchr {
         Gson gson = builder.create();
         Photo photo = gson.fromJson(jsonString, Photo.class);
 
-        Log.i("GSON", photo.mPhotolist.mList.toString());
+        Log.i(TAG, "Photo url: " + photo.mPhotolist.mList.get(1).getUrl());
         return photo.mPhotolist.mList;
     }
 

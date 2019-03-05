@@ -1,5 +1,7 @@
 package com.kuzheevadel.photogallery;
 
+import android.content.Context;
+import android.graphics.Point;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
@@ -7,9 +9,12 @@ import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v7.widget.GridLayoutManager;
 import android.support.v7.widget.RecyclerView;
+import android.util.Log;
+import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.TextView;
 
 import java.util.ArrayList;
@@ -19,6 +24,11 @@ public class PhotoGalleryFragment extends Fragment {
 
     private RecyclerView mRecyclerView;
     List<GalleryItem> mGalleryItems = new ArrayList<>();
+    private PhotoAdapter mPhotoAdapter;
+    private static int page = 1;
+    private boolean isLoading = false;
+    private int columnCount;
+    private static final String TAG_DISLPAY = "DisplayCount";
 
     public static PhotoGalleryFragment newInstance() {
         return new PhotoGalleryFragment();
@@ -28,13 +38,25 @@ public class PhotoGalleryFragment extends Fragment {
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setRetainInstance(true);
-        new FetchItemTask().execute();
+        new FetchItemTask().execute(page);
     }
 
     private void setAdapter() {
         if (isAdded()) {
-            mRecyclerView.setAdapter(new PhotoAdapter(mGalleryItems));
+                mPhotoAdapter = new PhotoAdapter(mGalleryItems);
+                mRecyclerView.setAdapter(mPhotoAdapter);
+                Log.i("FlickrFetch", "Adapters count = " + String.valueOf(mPhotoAdapter.getItemCount()));
         }
+    }
+
+    private int getRwColumnsCount() {
+        WindowManager wm = (WindowManager) getActivity().getSystemService(Context.WINDOW_SERVICE);
+        Display display = wm.getDefaultDisplay();
+        Point size = new Point();
+        display.getSize(size);
+        int width = size.x;
+        Log.i(TAG_DISLPAY, String.valueOf(width));
+        return width / 300;
     }
 
     @Nullable
@@ -42,7 +64,29 @@ public class PhotoGalleryFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View v = inflater.inflate(R.layout.activity_fragment, container, false);
         mRecyclerView = v.findViewById(R.id.photo_gallery_recycler);
-        mRecyclerView.setLayoutManager(new GridLayoutManager(getActivity(), 3));
+
+       columnCount = getRwColumnsCount();
+        Log.i(TAG_DISLPAY, "columnsCount = " + String.valueOf(columnCount));
+
+        final GridLayoutManager layoutManager = new GridLayoutManager(getActivity(), columnCount);
+        mRecyclerView.setLayoutManager(layoutManager);
+
+        mRecyclerView.setOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
+                int visibleItemCount = layoutManager.getChildCount();
+                int firstVisibleItem = layoutManager.findFirstVisibleItemPosition();
+                int totalItemsCount = layoutManager.getItemCount();
+
+                if (!isLoading) {
+                    if ((visibleItemCount + firstVisibleItem) >= totalItemsCount - 30) {
+                        new FetchItemTask().execute(page);
+                    }
+                }
+
+            }
+        });
         setAdapter();
         return v;
     }
@@ -52,7 +96,7 @@ public class PhotoGalleryFragment extends Fragment {
 
         public PhotoViewHolder(View v) {
             super(v);
-            mTitleTextView = (TextView) v;
+            mTitleTextView = v.findViewById(R.id.item_text_id);
         }
 
         public void bindGalleryItem(GalleryItem item) {
@@ -72,7 +116,7 @@ public class PhotoGalleryFragment extends Fragment {
         @Override
         public PhotoViewHolder onCreateViewHolder(@NonNull ViewGroup viewGroup, int i) {
             LayoutInflater inflater = LayoutInflater.from(getActivity());
-            View v = inflater.inflate(android.R.layout.simple_list_item_1, viewGroup, false);
+            View v = inflater.inflate(R.layout.item_layout, viewGroup, false);
 
             return new PhotoViewHolder(v);
         }
@@ -89,18 +133,29 @@ public class PhotoGalleryFragment extends Fragment {
         }
     }
 
-    public class FetchItemTask extends AsyncTask<Void, Void, List<GalleryItem>> {
+    public class FetchItemTask extends AsyncTask<Integer, Void, List<GalleryItem>> {
 
         @Override
-        protected List<GalleryItem> doInBackground(Void... voids) {
-            return new FlickrFetchr().fetchItems();
-
+        protected List<GalleryItem> doInBackground(Integer ... integers) {
+            page++;
+            isLoading = true;
+            return new FlickrFetchr().fetchItems(integers[0]);
         }
 
         @Override
         protected void onPostExecute(List<GalleryItem> items) {
-            mGalleryItems = items;
-            setAdapter();
+            Log.i("FlickrFetch", "items size = " + String.valueOf(items.size()));
+            if (mGalleryItems.size() == 0) {
+                mGalleryItems = items;
+                setAdapter();
+                isLoading = false;
+                Log.i("FlickrFetch", "mGalleryItems size = " + String.valueOf(mGalleryItems.size()));
+            } else {
+                mGalleryItems.addAll(items);
+                mPhotoAdapter.notifyItemInserted(mPhotoAdapter.getItemCount() - items.size());
+                isLoading = false;
+                Log.i("FlickrFetch", "mGalleryItems size = " + String.valueOf(mGalleryItems.size()));
+            }
         }
     }
 
