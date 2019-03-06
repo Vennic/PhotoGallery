@@ -8,3 +8,4 @@ public class Photo {
     public Photolist mPhotolist;
 
 }
+
