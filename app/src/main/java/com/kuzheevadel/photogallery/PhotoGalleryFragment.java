@@ -21,6 +21,8 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.ImageView;
 
+import com.squareup.picasso.Picasso;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -34,6 +36,7 @@ public class PhotoGalleryFragment extends Fragment {
     private int columnCount;
     private static final String TAG_DISLPAY = "DisplayCount";
     private ThubnailDownloader<PhotoViewHolder> mThubnailDownloader;
+    private PhotoCache mCache;
 
     public static PhotoGalleryFragment newInstance() {
         return new PhotoGalleryFragment();
@@ -46,16 +49,29 @@ public class PhotoGalleryFragment extends Fragment {
         new FetchItemTask().execute(page);
 
         Handler responseHandler = new Handler();
-        mThubnailDownloader = new ThubnailDownloader<>(responseHandler);
-        mThubnailDownloader.setThumbnailDownloadListener(new ThubnailDownloader.ThumbnailDownloadListener<PhotoViewHolder>() {
-            @Override
-            public void onThumbnailDownloaded(PhotoViewHolder target, Bitmap thumbnail) {
-                Drawable drawable = new BitmapDrawable(getResources(), thumbnail);
-                target.bindGalleryItem(drawable);
-            }
+        mCache = new PhotoCache(200);
+        mThubnailDownloader = new ThubnailDownloader<>(responseHandler, mCache);
+
+        mThubnailDownloader.setThumbnailDownloadListener((target, thumbnail) -> {
+            Drawable drawable = new BitmapDrawable(getResources(), thumbnail);
+            target.bindGalleryItem(drawable);
+            Log.i("Looper", "ImageView обновлен");
         });
+
+        String message;
+        if (mThubnailDownloader.getLooper() == null) {
+            message = "Looper is null" + getActivity().getMainLooper().toString();
+        } else {
+            message = mThubnailDownloader.getLooper().toString();
+        }
+
+        Log.i("Looper", "До start " + message);
+
         mThubnailDownloader.start();
+        Log.i("Looper", "После start()" + mThubnailDownloader.getLooper().toString());
         mThubnailDownloader.getLooper();
+
+        Log.i("Looper", "После getLooper()  " + mThubnailDownloader.getLooper().toString());
         Log.i(TAG_DISLPAY, "Background thread started");
     }
 
@@ -155,10 +171,20 @@ public class PhotoGalleryFragment extends Fragment {
         @Override
         public void onBindViewHolder(@NonNull PhotoViewHolder photoViewHolder, int i) {
             GalleryItem item = items.get(i);
-            Drawable placeholder = getResources().getDrawable(R.drawable.bill_up_close);
-            //photoViewHolder.bindGalleryItem(placeholder);
-            mThubnailDownloader.queueThubnail(photoViewHolder, item.getUrl());
+            if (item.getUrl() == null) {
+
+                photoViewHolder.mItemImageView.setImageDrawable(getResources().getDrawable(R.drawable.bill_up_close));
+
+            } else if (mCache.getBitmapFromCache(item.getUrl()) != null) {
+                Drawable drawable = new BitmapDrawable(getResources(), mCache.getBitmapFromCache(item.getUrl()));
+                photoViewHolder.bindGalleryItem(drawable);
+                Log.i(PhotoCache.TAG_CACHE, "Set picture from cache");
+            } else {
+                mThubnailDownloader.queueThubnail(photoViewHolder, item.getUrl());
+                Log.i("Looper", "Холдер и URL отправдены");
+            }
         }
+
 
         @Override
         public int getItemCount() {
@@ -172,7 +198,13 @@ public class PhotoGalleryFragment extends Fragment {
         protected List<GalleryItem> doInBackground(Integer ... integers) {
             page++;
             isLoading = true;
-            return new FlickrFetchr().fetchItems(integers[0]);
+            String query = "bugatti";
+
+            if (query == null) {
+                return new FlickrFetchr().fetchRecentPhotos(integers[0]);
+            } else {
+                return new FlickrFetchr().fetchSearchPhotos(query, page);
+            }
         }
 
         @Override

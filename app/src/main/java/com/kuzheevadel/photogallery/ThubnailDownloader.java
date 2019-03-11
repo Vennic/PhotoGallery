@@ -21,6 +21,7 @@ public class ThubnailDownloader<T> extends HandlerThread {
     private ConcurrentMap<T, String> mRequestMap = new ConcurrentHashMap<>();
     private Handler mResponseHandler;
     private ThumbnailDownloadListener<T> mDownloadListener;
+    private PhotoCache mPhotoCache;
 
     public interface ThumbnailDownloadListener<T> {
         void onThumbnailDownloaded(T target, Bitmap thumbnail);
@@ -30,9 +31,11 @@ public class ThubnailDownloader<T> extends HandlerThread {
         mDownloadListener = listener;
     }
 
-    public ThubnailDownloader(Handler responseHandler) {
+    public ThubnailDownloader(Handler responseHandler, PhotoCache cache) {
         super(TAG);
         mResponseHandler = responseHandler;
+        mPhotoCache = cache;
+        Log.i("Looper", "В конструкторе ThumbnailDownloader");
     }
 
     public void clearQueue() {
@@ -43,6 +46,7 @@ public class ThubnailDownloader<T> extends HandlerThread {
     @SuppressLint("HandlerLeak")
     @Override
     protected void onLooperPrepared() {
+        Log.i("Looper", "В методе onLooperPrepared");
         mRequestHandler = new Handler() {
             @Override
             public void handleMessage(Message msg) {
@@ -66,6 +70,8 @@ public class ThubnailDownloader<T> extends HandlerThread {
             byte[] bitmapBytes = new FlickrFetchr().getUrlBytes(url);
 
             final Bitmap bitmap = BitmapFactory.decodeByteArray(bitmapBytes, 0, bitmapBytes.length);
+
+            mPhotoCache.setBitmapInCache(url, bitmap);
             Log.i(TAG, "Bitmap created");
 
             mResponseHandler.post(new Runnable() {
