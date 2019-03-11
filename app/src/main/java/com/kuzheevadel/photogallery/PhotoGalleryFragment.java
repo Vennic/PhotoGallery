@@ -35,8 +35,7 @@ public class PhotoGalleryFragment extends Fragment {
     private boolean isLoading = false;
     private int columnCount;
     private static final String TAG_DISLPAY = "DisplayCount";
-    private ThubnailDownloader<PhotoViewHolder> mThubnailDownloader;
-    private PhotoCache mCache;
+    private Picasso mPicasso;
 
     public static PhotoGalleryFragment newInstance() {
         return new PhotoGalleryFragment();
@@ -48,31 +47,6 @@ public class PhotoGalleryFragment extends Fragment {
         setRetainInstance(true);
         new FetchItemTask().execute(page);
 
-        Handler responseHandler = new Handler();
-        mCache = new PhotoCache(200);
-        mThubnailDownloader = new ThubnailDownloader<>(responseHandler, mCache);
-
-        mThubnailDownloader.setThumbnailDownloadListener((target, thumbnail) -> {
-            Drawable drawable = new BitmapDrawable(getResources(), thumbnail);
-            target.bindGalleryItem(drawable);
-            Log.i("Looper", "ImageView обновлен");
-        });
-
-        String message;
-        if (mThubnailDownloader.getLooper() == null) {
-            message = "Looper is null" + getActivity().getMainLooper().toString();
-        } else {
-            message = mThubnailDownloader.getLooper().toString();
-        }
-
-        Log.i("Looper", "До start " + message);
-
-        mThubnailDownloader.start();
-        Log.i("Looper", "После start()" + mThubnailDownloader.getLooper().toString());
-        mThubnailDownloader.getLooper();
-
-        Log.i("Looper", "После getLooper()  " + mThubnailDownloader.getLooper().toString());
-        Log.i(TAG_DISLPAY, "Background thread started");
     }
 
     private void setAdapter() {
@@ -125,18 +99,6 @@ public class PhotoGalleryFragment extends Fragment {
         return v;
     }
 
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        mThubnailDownloader.clearQueue();
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        mThubnailDownloader.quit();
-        Log.i(TAG_DISLPAY, "Background thread destroyed");
-    }
 
     private class PhotoViewHolder extends RecyclerView.ViewHolder {
         private ImageView mItemImageView;
@@ -157,6 +119,7 @@ public class PhotoGalleryFragment extends Fragment {
 
         public PhotoAdapter(List<GalleryItem> list) {
             items = list;
+            mPicasso = Picasso.get();
         }
 
         @NonNull
@@ -171,18 +134,8 @@ public class PhotoGalleryFragment extends Fragment {
         @Override
         public void onBindViewHolder(@NonNull PhotoViewHolder photoViewHolder, int i) {
             GalleryItem item = items.get(i);
-            if (item.getUrl() == null) {
-
-                photoViewHolder.mItemImageView.setImageDrawable(getResources().getDrawable(R.drawable.bill_up_close));
-
-            } else if (mCache.getBitmapFromCache(item.getUrl()) != null) {
-                Drawable drawable = new BitmapDrawable(getResources(), mCache.getBitmapFromCache(item.getUrl()));
-                photoViewHolder.bindGalleryItem(drawable);
-                Log.i(PhotoCache.TAG_CACHE, "Set picture from cache");
-            } else {
-                mThubnailDownloader.queueThubnail(photoViewHolder, item.getUrl());
-                Log.i("Looper", "Холдер и URL отправдены");
-            }
+            mPicasso.load(item.getUrl())
+                    .into(photoViewHolder.mItemImageView);
         }
 
 
