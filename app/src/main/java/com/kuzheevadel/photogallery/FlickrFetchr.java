@@ -103,8 +103,6 @@ public class FlickrFetchr {
         GsonBuilder builder = new GsonBuilder();
         Gson gson = builder.create();
         Photo photo = gson.fromJson(jsonString, Photo.class);
-
-        Log.i(TAG, "Photo url: " + photo.mPhotolist.mList.get(1).getUrl());
         return photo.mPhotolist.mList;
     }
 
