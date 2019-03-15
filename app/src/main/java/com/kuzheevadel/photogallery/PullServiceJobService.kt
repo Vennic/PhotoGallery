@@ -19,8 +19,7 @@ class PullServiceJobService: JobService() {
 
     override fun onStartJob(params: JobParameters?): Boolean {
         Log.i("PollService", "In OnStartJob")
-        val task = PollTask(resources, applicationContext)
-        task.execute()
+        checkForNewPhoto(resources, applicationContext)
         return false
     }
 
@@ -68,14 +67,4 @@ class PullServiceJobService: JobService() {
             return hasBeenScheduled
         }
     }
-}
-
-class PollTask(private val resources: Resources, val context: Context): AsyncTask<Void, Void, Void>() {
-
-    override fun doInBackground(vararg params: Void?): Void? {
-        Log.i("PollService", "in doInBackGround ")
-        checkForNewPhoto(resources, context)
-        return null
-    }
-
 }

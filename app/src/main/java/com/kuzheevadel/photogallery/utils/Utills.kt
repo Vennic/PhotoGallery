@@ -11,16 +11,13 @@ import android.os.Build
 import android.support.v4.app.NotificationCompat
 import android.util.Log
 import com.kuzheevadel.photogallery.*
+import com.kuzheevadel.photogallery.web.FlicrDownload
+import com.kuzheevadel.photogallery.web.getPhotos
 
-fun checkForNewPhoto(resources: Resources, context: Context) {
-    val query = QueryPreferences.getStoredQuery(context)
-    val lastResultId = QueryPreferences.getLastResultId(context)
-    val items: List<GalleryItem>
-
-    items = when(query) {
-        null -> FlickrFetchr().fetchRecentPhotos(1)
-        else -> FlickrFetchr().fetchSearchPhotos(query, 1)
-    }
+fun notify(resources: Resources,
+           context: Context,
+           items: ArrayList<GalleryItem>,
+           lastResultId: String?) {
 
     if (items.isEmpty()) {
         return
@@ -55,10 +52,38 @@ fun checkForNewPhoto(resources: Resources, context: Context) {
         val notificationManager: NotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notificationManager.createNotificationChannel(notificationChannel)
+            notificationManager.createNotificationChannel(notificationChannel!!)
         }
         notificationManager.notify(1, notification)
     }
 
     QueryPreferences.setLastResultId(context, resultId)
+
+}
+
+fun checkForNewPhoto(resources: Resources, context: Context) {
+    val query = QueryPreferences.getStoredQuery(context)
+    val lastResultId = QueryPreferences.getLastResultId(context)
+    var items: List<GalleryItem> = ArrayList()
+
+    when(query) {
+        null -> getPhotos(1, query, 1, object : FlicrDownload {
+            override fun onDownloaded(list: ArrayList<GalleryItem>) {
+                items = list
+                notify(resources, context, list, lastResultId)
+                Log.i(PollService.TAG, "query null: ${list.size}")
+            }
+        })
+        else -> getPhotos(2, query, 1, object : FlicrDownload {
+            override fun onDownloaded(list: ArrayList<GalleryItem>) {
+                items = list
+                notify(resources, context, list, lastResultId)
+                Log.i(PollService.TAG, "query else: ${list.size}")
+            }
+        })
+    }
+
+    if (items.isEmpty()) {
+        return
+    }
 }
