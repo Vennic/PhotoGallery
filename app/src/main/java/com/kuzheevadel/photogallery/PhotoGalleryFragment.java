@@ -1,14 +1,8 @@
 package com.kuzheevadel.photogallery;
 
-import android.app.job.JobInfo;
-import android.app.job.JobScheduler;
-import android.content.ComponentName;
 import android.content.Context;
-import android.content.ServiceConnection;
 import android.graphics.Point;
-import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
@@ -26,14 +20,12 @@ import android.view.WindowManager;
 import android.widget.ImageView;
 import android.support.v7.widget.SearchView;
 import android.widget.ProgressBar;
-
+import com.kuzheevadel.photogallery.web.FlickrFtechKt;
 import com.squareup.picasso.Picasso;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
-
 
 public class PhotoGalleryFragment extends Fragment {
 
@@ -58,11 +50,10 @@ public class PhotoGalleryFragment extends Fragment {
         setHasOptionsMenu(true);
         jobId = 1503201915;
 
-        PullServiceJobService.startJob(getActivity(), jobId);
+        PullServiceJobService.startJob(Objects.requireNonNull(getActivity()), jobId);
 
-        updateItems(pageNumber);
+        updateItems(pageNumber, 1);
     }
-
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
@@ -74,7 +65,7 @@ public class PhotoGalleryFragment extends Fragment {
 
         MenuItem toggleItem = menu.findItem(R.id.menu_item_toggle_pulling);
 
-        if (PullServiceJobService.isAlarmOn(getActivity(), jobId)) {
+        if (PullServiceJobService.isAlarmOn(Objects.requireNonNull(getActivity()), jobId)) {
             toggleItem.setTitle(R.string.stop_polling);
         } else {
             toggleItem.setTitle(R.string.start_polling);
@@ -94,7 +85,7 @@ public class PhotoGalleryFragment extends Fragment {
                 searchView.clearFocus();
                 searchView.onActionViewCollapsed();
                 QueryPreferences.setStoredQuery(Objects.requireNonNull(getActivity()), query);
-                updateItems(pageNumber);
+                updateItems(pageNumber, 2);
                 return true;
             }
 
@@ -113,10 +104,10 @@ public class PhotoGalleryFragment extends Fragment {
                 QueryPreferences.setStoredQuery(Objects.requireNonNull(getActivity()), null);
                 mGalleryItems.clear();
                 pageNumber = 1;
-                updateItems(pageNumber);
+                updateItems(pageNumber, 1);
                 return true;
             case R.id.menu_item_toggle_pulling:
-                boolean shouldStartAlarm = !PullServiceJobService.isAlarmOn(getActivity(), jobId);
+                boolean shouldStartAlarm = !PullServiceJobService.isAlarmOn(Objects.requireNonNull(getActivity()), jobId);
 
                 if (shouldStartAlarm) {
                     PullServiceJobService.startJob(getActivity(), jobId);
@@ -131,9 +122,37 @@ public class PhotoGalleryFragment extends Fragment {
         }
     }
 
-    private void updateItems(Integer page) {
+    private void updateItems(Integer page, Integer typeOfmethod) {
         String query = QueryPreferences.getStoredQuery(Objects.requireNonNull(getActivity()));
-        new FetchItemTask(query).execute(page);
+        isLoading = true;
+
+        if (mProgressBar != null && pageNumber == 1) {
+            mProgressBar.setVisibility(View.VISIBLE);
+        }
+
+        FlickrFtechKt.getPhotos(typeOfmethod, query, page, list -> {
+            pageNumber++;
+            Log.i("Retrofit", String.valueOf(list.size()) + " : in updateItems");
+            updateAdapter(list);
+        });
+    }
+
+    private void updateAdapter(ArrayList<GalleryItem> items) {
+        if (mGalleryItems.size() == 0) {
+            mGalleryItems = items;
+            setAdapter();
+            isLoading = false;
+            Log.i("Retrofit", "is: mGalleryItems size: " + String.valueOf(mGalleryItems.size()));
+        } else {
+            mGalleryItems.addAll(items);
+            mPhotoAdapter.notifyItemInserted(mPhotoAdapter.getItemCount() - items.size());
+            isLoading = false;
+            Log.i("Retrofit", "else: mGalleryItems size: " + String.valueOf(mGalleryItems.size()));
+        }
+
+        if (mProgressBar != null) {
+            mProgressBar.setVisibility(View.GONE);
+        }
     }
 
     private void setAdapter() {
@@ -160,7 +179,6 @@ public class PhotoGalleryFragment extends Fragment {
         View v = inflater.inflate(R.layout.activity_fragment, container, false);
         mRecyclerView = v.findViewById(R.id.photo_gallery_recycler);
         mProgressBar = v.findViewById(R.id.progressBar);
-
         int columnCount = getRwColumnsCount();
         Log.i(TAG_DISPLAY, "columnsCount = " + String.valueOf(columnCount));
 
@@ -177,7 +195,12 @@ public class PhotoGalleryFragment extends Fragment {
 
                 if (!isLoading) {
                     if ((visibleItemCount + firstVisibleItem) >= totalItemsCount - 30) {
-                        new FetchItemTask(QueryPreferences.getStoredQuery(Objects.requireNonNull(getActivity()))).execute(pageNumber);
+                        String query = QueryPreferences.getStoredQuery(Objects.requireNonNull(getActivity()));
+                        if (query == null) {
+                            updateItems(pageNumber, 1);
+                        } else {
+                            updateItems(pageNumber, 2);
+                        }
                     }
                 }
 
@@ -186,7 +209,6 @@ public class PhotoGalleryFragment extends Fragment {
         setAdapter();
         return v;
     }
-
 
     private class PhotoViewHolder extends RecyclerView.ViewHolder {
         private ImageView mItemImageView;
@@ -223,67 +245,9 @@ public class PhotoGalleryFragment extends Fragment {
                     .into(photoViewHolder.mItemImageView);
         }
 
-
         @Override
         public int getItemCount() {
             return items.size();
         }
     }
-
-    public class FetchItemTask extends AsyncTask<Integer, Void, List<GalleryItem>> {
-
-        private String mQuery;
-
-        FetchItemTask(String query) {
-            mQuery = query;
-        }
-
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-            if (mProgressBar != null && pageNumber == 1) {
-                mProgressBar.setVisibility(View.VISIBLE);
-            }
-        }
-
-        @Override
-        protected List<GalleryItem> doInBackground(Integer ... integers) {
-            isLoading = true;
-
-            if (mQuery == null) {
-                pageNumber++;
-                return new FlickrFetchr().fetchRecentPhotos(integers[0]);
-            } else {
-                pageNumber++;
-                return new FlickrFetchr().fetchSearchPhotos(mQuery, integers[0]);
-            }
-        }
-
-        @Override
-        protected void onProgressUpdate(Void... values) {
-            super.onProgressUpdate(values);
-        }
-
-        @Override
-        protected void onPostExecute(List<GalleryItem> items) {
-            Log.i("FlickrFetch", "items size = " + String.valueOf(items.size()));
-            if (mGalleryItems.size() == 0) {
-                mGalleryItems = items;
-                setAdapter();
-                isLoading = false;
-                Log.i("FlickrFetch", "mGalleryItems size = " + String.valueOf(mGalleryItems.size()));
-            } else {
-                mGalleryItems.addAll(items);
-                mPhotoAdapter.notifyItemInserted(mPhotoAdapter.getItemCount() - items.size());
-                isLoading = false;
-                Log.i("FlickrFetch", "mGalleryItems size = " + String.valueOf(mGalleryItems.size()));
-            }
-
-            if (mProgressBar != null) {
-                mProgressBar.setVisibility(View.GONE);
-            }
-
-        }
-    }
-
 }

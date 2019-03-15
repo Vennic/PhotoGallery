@@ -4,8 +4,11 @@ import com.google.gson.annotations.SerializedName;
 
 import java.util.ArrayList;
 
-class Photolist {
+public class Photolist {
+    public ArrayList<GalleryItem> getList() {
+        return mList;
+    }
 
     @SerializedName("photo")
-    ArrayList<GalleryItem> mList;
+    public ArrayList<GalleryItem> mList;
 }
