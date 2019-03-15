@@ -1,9 +1,14 @@
 package com.kuzheevadel.photogallery;
 
+import android.app.job.JobInfo;
+import android.app.job.JobScheduler;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.ServiceConnection;
 import android.graphics.Point;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
@@ -26,6 +31,9 @@ import com.squareup.picasso.Picasso;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+
 
 public class PhotoGalleryFragment extends Fragment {
 
@@ -37,6 +45,7 @@ public class PhotoGalleryFragment extends Fragment {
     private boolean isLoading = false;
     private static final String TAG_DISPLAY = "DisplayCount";
     private Picasso mPicasso;
+    private int jobId;
 
     public static PhotoGalleryFragment newInstance() {
         return new PhotoGalleryFragment();
@@ -47,8 +56,13 @@ public class PhotoGalleryFragment extends Fragment {
         super.onCreate(savedInstanceState);
         setRetainInstance(true);
         setHasOptionsMenu(true);
+        jobId = 1503201915;
+
+        PullServiceJobService.startJob(getActivity(), jobId);
+
         updateItems(pageNumber);
     }
+
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
@@ -58,19 +72,28 @@ public class PhotoGalleryFragment extends Fragment {
         MenuItem menuItem = menu.findItem(R.id.menu_item_search);
         SearchView searchView = (SearchView) menuItem.getActionView();
 
+        MenuItem toggleItem = menu.findItem(R.id.menu_item_toggle_pulling);
+
+        if (PullServiceJobService.isAlarmOn(getActivity(), jobId)) {
+            toggleItem.setTitle(R.string.stop_polling);
+        } else {
+            toggleItem.setTitle(R.string.start_polling);
+        }
+
         searchView.setOnSearchClickListener(v -> {
-            String query = QueryPreferencesKt.getStoredQuery(getActivity());
+            String query = QueryPreferences.getStoredQuery(Objects.requireNonNull(getActivity()));
             searchView.setQuery(query, false);
         });
 
         searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
             @Override
             public boolean onQueryTextSubmit(String query) {
+                mRecyclerView.setAdapter(null);
                 mGalleryItems.clear();
                 pageNumber = 1;
                 searchView.clearFocus();
                 searchView.onActionViewCollapsed();
-                QueryPreferencesKt.setStoredQuery(getActivity(), query);
+                QueryPreferences.setStoredQuery(Objects.requireNonNull(getActivity()), query);
                 updateItems(pageNumber);
                 return true;
             }
@@ -86,10 +109,22 @@ public class PhotoGalleryFragment extends Fragment {
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
             case R.id.menu_clear:
-                QueryPreferencesKt.setStoredQuery(getActivity(), null);
+                mRecyclerView.setAdapter(null);
+                QueryPreferences.setStoredQuery(Objects.requireNonNull(getActivity()), null);
                 mGalleryItems.clear();
                 pageNumber = 1;
                 updateItems(pageNumber);
+                return true;
+            case R.id.menu_item_toggle_pulling:
+                boolean shouldStartAlarm = !PullServiceJobService.isAlarmOn(getActivity(), jobId);
+
+                if (shouldStartAlarm) {
+                    PullServiceJobService.startJob(getActivity(), jobId);
+                } else {
+                    PullServiceJobService.stopJob(getActivity(), jobId);
+                }
+
+                getActivity().invalidateOptionsMenu();
                 return true;
             default:
                 return super.onOptionsItemSelected(item);
@@ -97,7 +132,7 @@ public class PhotoGalleryFragment extends Fragment {
     }
 
     private void updateItems(Integer page) {
-        String query = QueryPreferencesKt.getStoredQuery(getActivity());
+        String query = QueryPreferences.getStoredQuery(Objects.requireNonNull(getActivity()));
         new FetchItemTask(query).execute(page);
     }
 
@@ -110,7 +145,7 @@ public class PhotoGalleryFragment extends Fragment {
     }
 
     private int getRwColumnsCount() {
-        WindowManager wm = (WindowManager) getActivity().getSystemService(Context.WINDOW_SERVICE);
+        WindowManager wm = (WindowManager) Objects.requireNonNull(getActivity()).getSystemService(Context.WINDOW_SERVICE);
         Display display = wm.getDefaultDisplay();
         Point size = new Point();
         display.getSize(size);
@@ -142,7 +177,7 @@ public class PhotoGalleryFragment extends Fragment {
 
                 if (!isLoading) {
                     if ((visibleItemCount + firstVisibleItem) >= totalItemsCount - 30) {
-                        new FetchItemTask(QueryPreferencesKt.getStoredQuery(getActivity())).execute(pageNumber);
+                        new FetchItemTask(QueryPreferences.getStoredQuery(Objects.requireNonNull(getActivity()))).execute(pageNumber);
                     }
                 }
 
@@ -156,7 +191,7 @@ public class PhotoGalleryFragment extends Fragment {
     private class PhotoViewHolder extends RecyclerView.ViewHolder {
         private ImageView mItemImageView;
 
-        public PhotoViewHolder(View v) {
+        PhotoViewHolder(View v) {
             super(v);
             mItemImageView = v.findViewById(R.id.item_image_view);
         }
@@ -167,7 +202,7 @@ public class PhotoGalleryFragment extends Fragment {
 
         List<GalleryItem> items;
 
-        public PhotoAdapter(List<GalleryItem> list) {
+        PhotoAdapter(List<GalleryItem> list) {
             items = list;
             mPicasso = Picasso.get();
         }
@@ -199,7 +234,7 @@ public class PhotoGalleryFragment extends Fragment {
 
         private String mQuery;
 
-        public FetchItemTask(String query) {
+        FetchItemTask(String query) {
             mQuery = query;
         }
 
@@ -213,13 +248,14 @@ public class PhotoGalleryFragment extends Fragment {
 
         @Override
         protected List<GalleryItem> doInBackground(Integer ... integers) {
-            pageNumber++;
             isLoading = true;
 
             if (mQuery == null) {
+                pageNumber++;
                 return new FlickrFetchr().fetchRecentPhotos(integers[0]);
             } else {
-                return new FlickrFetchr().fetchSearchPhotos(mQuery, pageNumber);
+                pageNumber++;
+                return new FlickrFetchr().fetchSearchPhotos(mQuery, integers[0]);
             }
         }
 
